@@ -208,7 +208,7 @@ class Interval(object):
                 raise (ValueError(self, other))
             elif self.overlaps(other):
                 logging.warning("Overlap for interval %s: (%f, %f)",
-                                self.mark, self.minTime, self.maxTime)
+                    self.mark, self.minTime, self.maxTime)
                 return self.minTime < other.minTime
             return self.minTime < other.minTime
         elif hasattr(other, 'time'):
@@ -222,7 +222,7 @@ class Interval(object):
                 raise (ValueError(self, other))
             elif self.overlaps(other):
                 logging.warning("Overlap for interval %s: (%f, %f)",
-                                self.mark, self.minTime, self.maxTime)
+                    self.mark, self.minTime, self.maxTime)
                 return self.minTime < other.minTime
             return self.maxTime > other.maxTime
         elif hasattr(other, 'time'):
@@ -244,7 +244,7 @@ class Interval(object):
                 # up if s/he so chooses
             elif self.overlaps(other):
                 logging.warning("Overlap for interval %s: (%f, %f)",
-                                self.mark, self.minTime, self.maxTime)
+                    self.mark, self.minTime, self.maxTime)
                 return cmp(self.minTime, other.minTime)
             return cmp(self.minTime, other.minTime)
         elif hasattr(other, 'time'):  # comparing Intervals and Points
@@ -313,12 +313,6 @@ class PointTier(object):
         self.minTime = minTime
         self.maxTime = maxTime
         self.points = []
-
-    def __eq__(self, other):
-        if not hasattr(other, 'points'):
-            return False
-        else:
-            return all([a == b for a, b in zip(self.points, other.points)])
 
     def __str__(self):
         return '<PointTier {0}, {1} points>'.format(self.name, len(self))
@@ -428,12 +422,6 @@ class IntervalTier(object):
         self.intervals = []
         self.strict = True
 
-    def __eq__(self, other):
-        if not hasattr(other, 'intervals'):
-            return False
-        else:
-            return all([a == b for a, b in zip(self.intervals, other.intervals)])
-
     def __str__(self):
         return '<IntervalTier {0}, {1} intervals>'.format(self.name,
                                                           len(self))
@@ -492,7 +480,7 @@ class IntervalTier(object):
         can be a numeric type, or a Point object.
         """
         i = self.indexContaining(time)
-        if i is not None:
+        if i:
             return self.intervals[i]
 
     def read(self, f, round_digits=DEFAULT_TEXTGRID_PRECISION):
@@ -557,7 +545,7 @@ class IntervalTier(object):
         sink.close()
 
     def bounds(self):
-        return (self.minTime, self.maxTime or self.intervals[-1].maxTime)
+        return self.minTime, self.maxTime or self.intervals[-1].maxTime
 
     # alternative constructor
 
@@ -591,7 +579,7 @@ def parse_header(source):
     short = 'short' in m.groups()[0]
     file_type = parse_line(source.readline(), short, '')  # header junk
     t = source.readline()  # header junk
-    return (file_type, short)
+    return file_type, short
 
 
 class TextGrid(object):
@@ -617,12 +605,6 @@ class TextGrid(object):
         self.maxTime = maxTime
         self.tiers = []
         self.strict = strict
-
-    def __eq__(self, other):
-        if not hasattr(other, 'tiers'):
-            return False
-        else:
-            return all([a == b for a, b in zip(self.tiers, other.tiers)])
 
     def __str__(self):
         return '<TextGrid {0}, {1} Tiers>'.format(self.name, len(self))
@@ -700,14 +682,7 @@ class TextGrid(object):
             file_type, short = parse_header(source)
             if file_type != 'TextGrid':
                 raise TextGridError('The file could not be parsed as a TextGrid as it is lacking a proper header.')
-
-            first_line_beside_header = source.readline()
-            try:
-                parse_line(first_line_beside_header, short, round_digits)
-            except Exception:
-                short = True
-
-            self.minTime = parse_line(first_line_beside_header, short, round_digits)
+            self.minTime = parse_line(source.readline(), short, round_digits)
             self.maxTime = parse_line(source.readline(), short, round_digits)
             source.readline()  # more header junk
             if short:
@@ -716,24 +691,32 @@ class TextGrid(object):
                 m = int(source.readline().strip().split()[2])  # will be self.n
             if not short:
                 source.readline()
+            flag = False
             for i in range(m):  # loop over grids
-                if not short:
+                if not short and not flag:
                     source.readline()
-                if parse_line(source.readline(), short, round_digits) == 'IntervalTier':
+                    flag = False
+                g = parse_line(source.readline(), short, round_digits)
+                if g == 'IntervalTier':
                     inam = parse_line(source.readline(), short, round_digits)
                     imin = parse_line(source.readline(), short, round_digits)
                     imax = parse_line(source.readline(), short, round_digits)
                     itie = IntervalTier(inam, imin, imax)
                     itie.strict = self.strict
                     n = int(parse_line(source.readline(), short, round_digits))
-                    for j in range(n):
+                    j = 0
+                    while True:
                         if not short:
-                            source.readline().rstrip().split()  # header junk
+                            a = source.readline()
+                            if 'item' in a or a == '':
+                                flag = True
+                                break
                         jmin = parse_line(source.readline(), short, round_digits)
                         jmax = parse_line(source.readline(), short, round_digits)
                         jmrk = _getMark(source, short)
                         if jmin < jmax:  # non-null
                             itie.addInterval(Interval(jmin, jmax, jmrk))
+                        j += 1
                     self.append(itie)
                 else:  # pointTier
                     inam = parse_line(source.readline(), short, round_digits)
@@ -741,11 +724,14 @@ class TextGrid(object):
                     imax = parse_line(source.readline(), short, round_digits)
                     itie = PointTier(inam)
                     n = int(parse_line(source.readline(), short, round_digits))
-                    for j in range(n):
-                        source.readline().rstrip()  # header junk
+                    j = 0
+                    while True:
+                        if 'item' in source.readline():
+                            break
                         jtim = parse_line(source.readline(), short, round_digits)
                         jmrk = _getMark(source, short)
                         itie.addPoint(Point(jtim, jmrk))
+                        j += 1
                     self.append(itie)
 
     def write(self, f, null=''):
